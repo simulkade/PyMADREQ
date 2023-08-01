@@ -17,14 +17,28 @@ from scipy.sparse.linalg import spsolve
 from scipy.interpolate import interp1d, pchip, PPoly
 
 class CapillaryPressure:
-    def __init__(self, pc0=0.0, swc=0.1, sor=0.05, nw=2.0):
-        self.pc0 = pc0
+    def __init__(self):
+        pass
+
+    def visualize(self):
+        pass
+
+class CapillaryPressurePiecewise:
+    def __init__(self, sw_pc0=0.6, pc_min=-1e5, pc_max=5e6, pc_lm=-5e4, pc_hm=7e4, swc=0.15, sor=0.2,
+                    extrap_factor=50.0, curve_factor_l=20.0, curve_factor_h=20.0):
+        """
+        pc = 0 at sw = sw_pc0
+        pc = pc_min at sw = 1.0-Sor
+        pc = pc_max at sw = Swc
+        pc = pc_lm at sw_pc0 < Sw < 1-Sor
+        pc = pc_hm at Swc < Sw < sw_pc0
+        """
+        self.sw_pc0 = sw_pc0
+        self.pc_min = pc_min
+        self.pc_max = pc_max
         self.swc = swc
         self.sor = sor
-        self.nw = nw
 
-    def piecewise_pc(sw_pc0, pc_lm, pc_hm, pc_min, pc_max, swc, sor,
-                    extrap_factor, curve_factor_l, curve_factor_h):
         sw_hm = np.mean([swc, sw_pc0])
         sw_lm = np.mean([1 - sor, sw_pc0])
         sw_curve_h = swc + (sw_hm - swc) / curve_factor_h
@@ -54,7 +68,8 @@ class CapillaryPressure:
         pc_der_pp = pc_pp.derivative(nu=1)
         pcder = lambda sw: pc_der_pp(sw)
 
-        return pc, pcder
+        self.pc = pc
+        self.dpc_dsw = pcder
 
 # # Example usage:
 # sw_pc0 = 0.4
