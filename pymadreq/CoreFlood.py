@@ -16,15 +16,21 @@ from scipy.sparse import vstack, hstack
 from scipy.sparse.linalg import spsolve
 from scipy.interpolate import interp1d, pchip, PPoly
 
+def print_res(res):
+    print(res)
+
 class CapillaryPressure:
-    def __init__(self):
-        pass
+    def __init__(self, swc=0.1, sor=0.1):
+        self.swc = swc
+        self.sor = sor
 
     def visualize(self):
-        pass
+        plt.figure()
+        sw = np.linspace(self.swc, 1-self.sor, 100)
+        plt.plot(sw, self.pc(sw))
 
-class CapillaryPressurePiecewise:
-    def __init__(self, sw_pc0=0.6, pc_min=-1e5, pc_max=5e6, pc_lm=-5e4, pc_hm=7e4, swc=0.15, sor=0.2,
+class CapillaryPressurePiecewise(CapillaryPressure):
+    def __init__(self, sw_pc0=0.6, pc_min=-1e6, pc_max=5e6, pc_lm=-5e4, pc_hm=7e4, swc=0.15, sor=0.2,
                     extrap_factor=50.0, curve_factor_l=20.0, curve_factor_h=20.0):
         """
         pc = 0 at sw = sw_pc0
@@ -33,11 +39,10 @@ class CapillaryPressurePiecewise:
         pc = pc_lm at sw_pc0 < Sw < 1-Sor
         pc = pc_hm at Swc < Sw < sw_pc0
         """
+        super().__init__(swc, sor)
         self.sw_pc0 = sw_pc0
         self.pc_min = pc_min
         self.pc_max = pc_max
-        self.swc = swc
-        self.sor = sor
 
         sw_hm = np.mean([swc, sw_pc0])
         sw_lm = np.mean([1 - sor, sw_pc0])
