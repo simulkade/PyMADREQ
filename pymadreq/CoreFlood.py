@@ -27,7 +27,8 @@ class CapillaryPressure:
     def visualize(self):
         plt.figure()
         sw = np.linspace(0.0, 1.0, 100)
-        plt.plot(sw, self.pc(sw))
+        plt.plot(sw, self.pc_imb(sw))
+        plt.plot(sw, self.pc_drain(sw))
         if type(self) == CapillaryPressurePiecewise:
             plt.plot(self.imb_points[:, 0], self.imb_points[:, 1], 'o')
 
@@ -76,16 +77,30 @@ class CapillaryPressurePiecewise(CapillaryPressure):
             [1.0, extrap_factor * pc_min]
         ])
         pc_pp = pchip(pc_data[:, 0], pc_data[:, 1])
-        pc = lambda sw: pc_pp(sw)
+        # pc = lambda sw: pc_pp(sw)
         pc_der_pp = pc_pp.derivative(nu=1)
-        pcder = lambda sw: pc_der_pp(sw)
+        # pcder = lambda sw: pc_der_pp(sw)
         self.imb_points = pc_data
-        self.pc_imb = pc
-        self.dpc_dsw_imb = pcder
+        self.pc_imb = pc_pp
+        self.dpc_dsw_imb = pc_der_pp
 
         # Define drainage curve
-        self.labda = np.log(sw_curve_h/sw_curve_l)/np.log(pc_curve_h/pc_curve_l)
-        # TBD
+        self.labda = -np.log(swc)/(np.log(pc_max/pce))
+        pc_corey = CapillaryPressureBrooksCorey(swc=swc, sor=sor, pce=pce, labda=self.labda, pc_max=pc_max)
+        # self.labda = labda
+        print(self.labda)
+        pc_drain_data = np.array([
+            [0.0, extrap_factor * pc_max],
+            [swc, pc_max],
+            # [pc_corey.sw0, pc_corey.pc_drain(pc_corey.sw0)],
+            [np.mean([pc_corey.sw0, sw_hm]), pc_corey.pc_drain(np.mean([pc_corey.sw0, sw_hm]))],
+            [sw_hm, pc_corey.pc_drain(sw_hm)],
+            [sw_pc0, pc_corey.pc_drain(np.array(sw_pc0))],
+            [1 - sor, pc_corey.pc_drain(np.array(1 - sor))],
+            [1.0, pce]
+        ])
+        print(pc_drain_data)
+        self.pc_drain = pchip(pc_drain_data[:, 0], pc_drain_data[:, 1])
 
         
 
@@ -99,12 +114,12 @@ class CapillaryPressureBrooksCorey(CapillaryPressure):
                         np.sqrt((-1+labda*np.log(pc_max/pce))**2+4*swc/(1-swc)))/2*(1-swc)
         self.pcs = pce*((self.sw0-swc)/(1-swc))**(-1.0/labda)
 
-    def pc(self, sw):
+    def pc_drain(self, sw):
         res = np.zeros_like(sw)
         cond1 = np.logical_and(0.0 <= sw, sw < self.sw0)
         res[cond1] = np.exp((np.log(self.pcs) - np.log(self.pc_max)) / 
                             self.sw0 * (sw[cond1] - self.sw0)+np.log(self.pcs))
-        res[sw > self.sw0] = self.pce*((sw[sw > self.sw0]-self.swc+eps())/(1-self.swc))**(-1.0/self.labda)
+        res[sw >= self.sw0] = self.pce*((sw[sw >= self.sw0]-self.swc+eps())/(1-self.swc))**(-1.0/self.labda)
         res[sw <= 0.0] = self.pc_max
         return res
 
