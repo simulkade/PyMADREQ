@@ -16,8 +16,8 @@ from scipy.sparse import vstack, hstack
 from scipy.sparse.linalg import spsolve
 from scipy.interpolate import interp1d, pchip, PPoly
 
-def print_res(res):
-    print(res)
+def eps():
+    return np.finfo(float).eps
 
 class CapillaryPressure:
     def __init__(self, swc=0.1, sor=0.1):
@@ -26,20 +26,29 @@ class CapillaryPressure:
 
     def visualize(self):
         plt.figure()
-        sw = np.linspace(self.swc, 1-self.sor, 100)
+        sw = np.linspace(0.0, 1.0, 100)
         plt.plot(sw, self.pc(sw))
+        if type(self) == CapillaryPressurePiecewise:
+            plt.plot(self.imb_points[:, 0], self.imb_points[:, 1], 'o')
 
 class CapillaryPressurePiecewise(CapillaryPressure):
-    def __init__(self, sw_pc0=0.6, pc_min=-1e6, pc_max=5e6, pc_lm=-5e4, pc_hm=7e4, swc=0.15, sor=0.2,
-                    extrap_factor=50.0, curve_factor_l=20.0, curve_factor_h=20.0):
+    def __init__(self, sw_pc0=0.6, pce = 1e5, pc_min=-1e6, pc_max=5e6, 
+                 pc_lm=-5e4, pc_hm=7e4, swc=0.15, sor=0.2,
+                    extrap_factor=200.0, curve_factor_l=5.0, curve_factor_h=10.0):
         """
+        This class defines a piecewise capillary pressure curve for imbibition. 
+        The curve is defined by fitting a monotonic cubic spline to the following points:
         pc = 0 at sw = sw_pc0
         pc = pc_min at sw = 1.0-Sor
         pc = pc_max at sw = Swc
         pc = pc_lm at sw_pc0 < Sw < 1-Sor
         pc = pc_hm at Swc < Sw < sw_pc0
+        Subject to:
+        pc_min<pc_lm<0<pc_hm<pc_max
+        curve_factor_l>1.0 (recommended value of > 2.0)
+        curve_factor_h>1.0 (recommended value of > 2.0)
         """
-        super().__init__(swc, sor)
+        super().__init__(swc=swc, sor=sor)
         self.sw_pc0 = sw_pc0
         self.pc_min = pc_min
         self.pc_max = pc_max
@@ -66,15 +75,38 @@ class CapillaryPressurePiecewise(CapillaryPressure):
             [1 - sor, pc_min],
             [1.0, extrap_factor * pc_min]
         ])
-
         pc_pp = pchip(pc_data[:, 0], pc_data[:, 1])
         pc = lambda sw: pc_pp(sw)
-
         pc_der_pp = pc_pp.derivative(nu=1)
         pcder = lambda sw: pc_der_pp(sw)
+        self.imb_points = pc_data
+        self.pc_imb = pc
+        self.dpc_dsw_imb = pcder
 
-        self.pc = pc
-        self.dpc_dsw = pcder
+        # Define drainage curve
+        self.labda = np.log(sw_curve_h/sw_curve_l)/np.log(pc_curve_h/pc_curve_l)
+        # TBD
+
+        
+
+class CapillaryPressureBrooksCorey(CapillaryPressure):
+    def __init__(self, swc=0.1, sor=0.1, pce = 1e5, labda = 2.0, pc_max=5e6):
+        super().__init__(swc=swc, sor=sor)
+        self.pce = pce
+        self.labda = labda
+        self.pc_max = pc_max
+        self.sw0 = swc+(1-labda*np.log(pc_max/pce)+
+                        np.sqrt((-1+labda*np.log(pc_max/pce))**2+4*swc/(1-swc)))/2*(1-swc)
+        self.pcs = pce*((self.sw0-swc)/(1-swc))**(-1.0/labda)
+
+    def pc(self, sw):
+        res = np.zeros_like(sw)
+        cond1 = np.logical_and(0.0 <= sw, sw < self.sw0)
+        res[cond1] = np.exp((np.log(self.pcs) - np.log(self.pc_max)) / 
+                            self.sw0 * (sw[cond1] - self.sw0)+np.log(self.pcs))
+        res[sw > self.sw0] = self.pce*((sw[sw > self.sw0]-self.swc+eps())/(1-self.swc))**(-1.0/self.labda)
+        res[sw <= 0.0] = self.pc_max
+        return res
 
 # # Example usage:
 # sw_pc0 = 0.4
