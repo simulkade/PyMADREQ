@@ -33,9 +33,11 @@ class CapillaryPressure:
             plt.plot(self.imb_points[:, 0], self.imb_points[:, 1], 'o')
 
 class CapillaryPressurePiecewise(CapillaryPressure):
-    def __init__(self, sw_pc0=0.6, pce = 1e5, pc_min=-1e6, pc_max=5e6, 
-                 pc_lm=-5e4, pc_hm=7e4, swc=0.15, sor=0.2,
-                    extrap_factor=200.0, curve_factor_l=5.0, curve_factor_h=10.0):
+    def __init__(self, sw_pc0=0.6, pce = 1e5, sorting_factor=2.0,
+                 pc_min=-1e6, pc_max=5e6, 
+                 pc_lm=-5e4, pc_hm=7e4, 
+                 swc=0.15, sor=0.2, 
+                 extrap_factor=200.0, curve_factor_l=5.0, curve_factor_h=10.0):
         """
         This class defines a piecewise capillary pressure curve for imbibition. 
         The curve is defined by fitting a monotonic cubic spline to the following points:
@@ -85,15 +87,15 @@ class CapillaryPressurePiecewise(CapillaryPressure):
         self.dpc_dsw_imb = pc_der_pp
 
         # Define drainage curve
-        self.labda = -np.log(swc)/(np.log(pc_max/pce))
-        pc_corey = CapillaryPressureBrooksCorey(swc=swc, sor=sor, pce=pce, labda=self.labda, pc_max=pc_max)
+        self.labda = sorting_factor #-np.log((swc)/(1-swc))/(np.log(pc_max/pce)) until I find a better way
+        pc_corey = CapillaryPressureBrooksCorey(swc=swc, sor=sor, pce_w=pce, labda_w=self.labda, pc_max_w=pc_max)
         # self.labda = labda
         print(self.labda)
         pc_drain_data = np.array([
             [0.0, extrap_factor * pc_max],
             [swc, pc_max],
             # [pc_corey.sw0, pc_corey.pc_drain(pc_corey.sw0)],
-            [np.mean([pc_corey.sw0, sw_hm]), pc_corey.pc_drain(np.mean([pc_corey.sw0, sw_hm]))],
+            [np.mean([pc_corey.sw0_w, sw_hm]), pc_corey.pc_drain(np.mean([pc_corey.sw0_w, sw_hm]))],
             [sw_hm, pc_corey.pc_drain(sw_hm)],
             [sw_pc0, pc_corey.pc_drain(np.array(sw_pc0))],
             [1 - sor, pc_corey.pc_drain(np.array(1 - sor))],
@@ -101,27 +103,56 @@ class CapillaryPressurePiecewise(CapillaryPressure):
         ])
         print(pc_drain_data)
         self.pc_drain = pchip(pc_drain_data[:, 0], pc_drain_data[:, 1])
+        self.dpc_dsw_drain = self.pc_drain.derivative(nu=1)
 
-        
 
 class CapillaryPressureBrooksCorey(CapillaryPressure):
-    def __init__(self, swc=0.1, sor=0.1, pce = 1e5, labda = 2.0, pc_max=5e6):
+    def __init__(self, swc=0.1, sor=0.1, 
+                 pce_w = 1e5, pce_o = 1e5, 
+                 labda_w = 2.0, labda_o = 2.0, 
+                 pc_max_w=5e6, pc_max_o=5e6):
         super().__init__(swc=swc, sor=sor)
-        self.pce = pce
-        self.labda = labda
-        self.pc_max = pc_max
-        self.sw0 = swc+(1-labda*np.log(pc_max/pce)+
-                        np.sqrt((-1+labda*np.log(pc_max/pce))**2+4*swc/(1-swc)))/2*(1-swc)
-        self.pcs = pce*((self.sw0-swc)/(1-swc))**(-1.0/labda)
-
+        self.pce_w = pce_w
+        self.pce_o = pce_o
+        self.labda_o = labda_o
+        self.labda_w = labda_w
+        self.pc_max_w = pc_max_w
+        self.pc_max_o = pc_max_o
+        self.sw0_w = swc+(1-labda_w*np.log(pc_max_w/pce_w)+
+                        np.sqrt((-1+labda_w*np.log(pc_max_w/pce_w))**2+4*swc/(1-swc)))/2*(1-swc)
+        self.sw0_o = sor+(1-labda_o*np.log(pc_max_o/pce_o)+
+                        np.sqrt((-1+labda_o*np.log(pc_max_o/pce_o))**2+4*sor/(1-sor)))/2*(1-sor)
+        self.pcs_w = pce_w*((self.sw0_w-swc)/(1-swc))**(-1.0/labda_w)
+        self.pcs_o = pce_o*((self.sw0_o-sor)/(1-sor))**(-1.0/labda_o)
+# function res=pc_imb(sw, pce_w, pce_o, swc, sor, labda_w, labda_o, pc_max_w, pc_max_o)
+#   pc1=pc_drain(sw, pce_w, swc, labda_w, pc_max_w);
+#   pc2=pc_drain(1-sw, pce_o, sor, labda_o, pc_max_o);
+#   res=pc1-pc2;
+# end
+    def _pc(self, sw, pce, labda, pc_max, sw0, pcs, swc):
+        res = np.zeros_like(sw)
+        cond1 = np.logical_and(0.0 <= sw, sw <= sw0)
+        res[cond1] = np.exp((np.log(pcs) - np.log(pc_max)) / 
+                            sw0 * (sw[cond1] - sw0)+np.log(pcs))
+        res[sw > sw0] = pce*((sw[sw > sw0]-swc+eps())/(1-swc))**(-1.0/labda)
+        res[sw < 0.0] = pc_max
+        return res
+    
     def pc_drain(self, sw):
+        return self._pc(sw, self.pce_w, self.labda_w, self.pc_max_w, self.sw0_w, self.pcs_w, self.swc)
+    
+    def pc_imb(self, sw):
+        return self.pc_drain(sw)-self._pc(1-sw, self.pce_o, self.labda_o, self.pc_max_o, self.sw0_o, self.pcs_o, self.sor)
+    
+    def dpc_dsw_drain(self, sw):
         res = np.zeros_like(sw)
         cond1 = np.logical_and(0.0 <= sw, sw < self.sw0)
-        res[cond1] = np.exp((np.log(self.pcs) - np.log(self.pc_max)) / 
-                            self.sw0 * (sw[cond1] - self.sw0)+np.log(self.pcs))
-        res[sw >= self.sw0] = self.pce*((sw[sw >= self.sw0]-self.swc+eps())/(1-self.swc))**(-1.0/self.labda)
-        res[sw <= 0.0] = self.pc_max
+        res[cond1] = (np.log(self.pcs) - np.log(self.pc_max)) / self.sw0 * np.exp(
+            (np.log(self.pcs) - np.log(self.pc_max)) / self.sw0 * (sw[cond1] - self.sw0))
+        res[sw >= self.sw0] = -self.pce/self.labda*((sw[sw >= self.sw0]-self.swc+eps())/(1-self.swc))**(-1.0/self.labda-1.0)
+        res[sw <= 0.0] = 0.0
         return res
+    
 
 # # Example usage:
 # sw_pc0 = 0.4
@@ -297,7 +328,7 @@ class RelativePermeability:
 
 
 
-class Resevoir:
+class Reservoir:
     def __init__(self, rel_perm: RelativePermeability, fluids: Fluids, 
                  porosity=0.2, permeability=0.01e-12,
                  sw_init = 0.2, pressure_init = 100e5):
@@ -331,7 +362,7 @@ class OperationalConditions:
 
 class CoreModel1D:
     def __init__(self, 
-                 reservoir: Resevoir,
+                 reservoir: Reservoir,
                  operational_conditions: OperationalConditions, 
                  Nx: int = 50, 
                  length: float=6.0e-2,
@@ -360,7 +391,7 @@ class CoreModel1D:
         BCp.right.b[:] = 1.0
         BCp.right.c[:] = operational_conditions.production_pressure
         # injection boundary
-        BCp.left.a[:] = self.water_mobility_max[0]
+        BCp.left.a[:] = self.water_mobility_max.xvalue[0]
         BCp.left.b[:] = 0.0
         BCp.left.c[:] = -operational_conditions.injection_velocity
         # saturation left boundary
@@ -420,12 +451,12 @@ class CoreModel1D:
                 [Mbcp, RHSbcp] = boundaryConditionTerm(self.pressure_bc)
                 [Mbcsw, RHSbcsw] = boundaryConditionTerm(self.saturation_bc)
                 M = vstack([hstack([Mdiffp1 + Mbcp, Mconvsw1]), hstack([Mdiffp2, Mconvsw2 + Mtranssw2 + Mbcsw])])
-                RHS = vstack([RHS1 + RHSbcp, RHS2 + RHStrans2 + RHSbcsw])
+                RHS = np.hstack([RHS1 + RHSbcp, RHS2 + RHStrans2 + RHSbcsw])
                 x = spsolve(M, RHS)
-                p_new = np.reshape(x[0:(Nxyz + 2)])
-                sw_new = np.reshape(x[(Nxyz + 2):])
-                error_p = max(abs((p_new - self.pressure.value[:]) / p_new))
-                error_sw = max(abs(sw_new - self.saturation.value[:]))
+                p_new = np.reshape(x[0:(Nxyz + 2)], (Nxyz + 2))
+                sw_new = np.reshape(x[(Nxyz + 2):], (Nxyz + 2))
+                error_p = np.max(np.abs((p_new - self.pressure.value[:]) / p_new))
+                error_sw = np.max(np.abs(sw_new - self.saturation.value[:]))
                 self.pressure.value[:] = p_new
                 self.saturation.value[:] = sw_new
             if loop_count > 10:
