@@ -189,6 +189,11 @@ class Fluids:
         self.water_viscosity = mu_water
         self.oil_viscosity = mu_oil
 
+def createFluids(fluids_dict: dict):
+    """
+    Creates a Fluids object from a dictionary of fluid properties.
+    """
+    return Fluids(mu_water=fluids_dict["water"]["viscosity"], mu_oil=fluids_dict["oil"]["viscosity"])
 
 class RelativePermeability:
     """
@@ -326,7 +331,35 @@ class RelativePermeability:
         plt.ylabel("Relative permeability")
         plt.legend()
 
+def createCapillaryPressurePiecewise(capillary_pressure_dict: dict, rel_perm_dict: dict):
+    """
+    Creates a CapillaryPressurePiecewise object from a dictionary of capillary pressure properties.
+    """
+    return CapillaryPressurePiecewise(sw_pc0=capillary_pressure_dict["sw_pc0"], pce=capillary_pressure_dict["pcw_entry"], 
+                                      sorting_factor=capillary_pressure_dict["labda_w"],
+                                      pc_min=capillary_pressure_dict["pc_min"], pc_max=capillary_pressure_dict["pc_max"], 
+                                      pc_lm=capillary_pressure_dict["pc_lm"], pc_hm=capillary_pressure_dict["pc_hm"], 
+                                      swc=rel_perm_dict["swc"], sor=rel_perm_dict["sor"], 
+                                      extrap_factor=capillary_pressure_dict["extrap_factor"], 
+                                      curve_factor_l=capillary_pressure_dict["curve_low"], 
+                                      curve_factor_h=capillary_pressure_dict["curve_high"])
 
+def createRelativePermeability(rel_perm_dict: dict):
+    """
+    Creates a RelativePermeability object from a dictionary of relative permeability properties.
+    """
+    return RelativePermeability(swc=rel_perm_dict["swc"], sor=rel_perm_dict["sor"], 
+                                kro0=rel_perm_dict["kro0"], no=rel_perm_dict["no"], 
+                                krw0=rel_perm_dict["krw0"], nw=rel_perm_dict["nw"])
+
+def createCapillaryPressureCorey(capillary_pressure_dict: dict, rel_perm_dict: dict):
+    """
+    Creates a CapillaryPressure object from a dictionary of Corey-type capillary pressure properties.
+    """
+    return CapillaryPressureBrooksCorey(swc=rel_perm_dict["swc"], sor=rel_perm_dict["sor"], 
+                                        pce_w=capillary_pressure_dict["pcw_entry"], pce_o=capillary_pressure_dict["pco_entry"], 
+                                        labda_w=capillary_pressure_dict["labda_w"], labda_o=capillary_pressure_dict["labda_o"], 
+                                        pc_max_w=capillary_pressure_dict["pc_max_w"], pc_max_o=capillary_pressure_dict["pc_max_o"])
 
 class Reservoir:
     def __init__(self, rel_perm: RelativePermeability, fluids: Fluids, 

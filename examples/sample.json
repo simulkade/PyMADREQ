@@ -1,0 +1,191 @@
+{
+    "rel_perm":{
+        "water_wet":{
+            "corey":{
+                "krw0": 0.3,
+                "nw": 2.4,
+                "kro0": 0.6,
+                "no": 2.0,
+                "swc": 0.09,
+                "sor": 0.1
+            }
+        },
+        "oil_wet":{
+            "corey":{
+                "krw0": 1.0,
+                "nw": 2.4,
+                "kro0": 0.76,
+                "no": 2.0,
+                "swc":0.09,
+                "sor":0.12
+            }
+        }
+    },
+    "pc_imb":{
+        "water_wet":{
+            "piecewise":{
+                "pc_min": -1e6,
+                "pc_max": 1e6,
+                "sw_pc0": 0.6,
+                "extrap_factor": 100.0,
+                "curve_low": 10.0,
+                "curve_high": 10.0,
+                "pc_lm": -1.0e4,
+                "pc_hm": 1.0e4,
+                "pcw_entry": 1e5,
+                "labda_w": 2.4
+            },
+            "corey":{
+                "pcw_entry": 1e5,
+                "pco_entry": 1e5,
+                "labda_w": 2.4,
+                "labda_o": 2.4,
+                "pc_max_o":1e6,
+                "pc_max_w":1e6
+            }
+        },
+        "oil_wet":{
+            "piecewise":{
+                "pc_min": -1e5,
+                "pc_max": 1e5,
+                "sw_pc0": 0.25,
+                "extrap_factor": 100.0,
+                "curve_low": 10.0,
+                "curve_high": 10.0,
+                "pc_lm": -5.04e4,
+                "pc_hm": 0.16e4
+            },
+            "corey":{
+                "pcw_entry": 1e5,
+                "pco_entry": 1e5,
+                "labda_w": 2.4,
+                "labda_o": 2.4,
+                "pc_max":1e6,
+                "pc_min":1e6
+            }
+        }
+    },
+    "phase":{
+        "water":{
+            "viscosity":0.001,
+            "density":1000.0
+        },
+        "oil":{
+            "viscosity": 0.003,
+            "density":800.0
+        }
+    },
+    "core":{
+        "length": 0.08,
+        "diameter": 0.05,
+        "permeability": 0.001e-12,
+        "porosity": 0.38
+    },
+    "imbibition":{
+        "Nx": 10,
+        "Ny": 20,
+        "allowed_dsw": 0.02,
+        "allowed_dp": 100.0,
+        "eps_sw": 1e-5,
+        "eps_p": 1e-5,
+        "dt": 1000.0,
+        "end_time": 864000.0,
+        "initial_sw": 0.09,
+        "initial_p": 1.013e5,
+        "initial_c": 2.0,
+        "boundary_c": 0.6,
+        "diffusivity": 1e-9,
+        "nthreads": 4
+    },
+    "flooding":{
+        "Nx":30,
+        "allowed_dsw": 0.02,
+        "allowed_dp": 100.0,
+        "eps_sw": 1e-6,
+        "eps_p": 1e-5,
+        "dt": 100.0,
+        "end_time": 8640.0,
+        "initial_sw": 0.09,
+        "initial_p": 100.0e5,
+        "initial_c": 2.0,
+        "boundary_c": 0.6,
+        "diffusivity": 1e-9,
+        "injection_rate_ml_min": 0.1,
+        "back_pressure": 100.0e5,
+        "injected_pv": 5.0
+    },
+    "BC":{
+        "Seawater":{
+            "Name": "Seawater",
+            "Number": 1,
+            "Unit": "mol/L",
+            "Composition":{
+                "Na": 0.45,
+                "K": 0.01,
+                "Mg": 0.045,
+                "Ca": 0.013,
+                "Cl": 0.528,
+                "S": 0.024
+            },
+            "pH": 8.4,
+            "Charge": false,
+            "ChargeComponent": "pH",
+            "Density": 1.0,
+            "DensityCalculation": true,
+            "Alkalinity": 0.002,
+            "AlkalinityComponent": "HCO3",
+            "pe": 4.0,
+            "Pressure": 1.0,
+            "Temperature": 25.0
+        },
+        "Solution2":{
+
+        }
+    },
+    "IC":{
+        "Solution":{
+            "Name": "Formation Water",
+            "Number": 2,
+            "Composition":{
+                "Na": 1.339,
+                "K": 0.0,
+                "Mg": 0.025,
+                "Ca": 0.013,
+                "Cl": 1.414,
+                "S": 0.0
+            },
+            "pH": 8.4,
+            "Charge": true,
+            "ChargeComponent": "pH"
+        },
+        "Phase":{
+            "Name": "Stevns Klint",
+            "Number": 1,
+            "Composition":{
+                "Calcite": 1.0,
+                "Anhydrite": 0.01
+            },
+            "AlternativeFormula": ["CaCO3", ""], 
+            "SaturationIndices": [0.0, 0.0],
+            "ForceEquality": [false, false],
+            "DissolveOnly": [false, false],
+            "PrecipitateOnly": [false, false]
+        },
+        "Surface":{
+            "Name": "SK",
+            "Number": 1,
+            "SiteDensity": 5.0,
+            "SpecificArea": 2.0,
+            "Reactions":{
+                "1": "",
+                "2": "",
+                "3": ""
+            },
+            "LogK": [],
+            "DeltaH": [],
+            "SitesUnits": "absolute",
+            "EDL_Layer": true
+
+        }
+    }
+}
