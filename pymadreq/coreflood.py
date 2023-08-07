@@ -1,14 +1,3 @@
-# def two_phase_flow(muw=1e-3, muo=2e-3, ut=1e-5, phi=0.2,
-#                    k=1e-12, swc=0.1, sor=0.05, kro0=0.9, no=2.0, krw0=0.4,
-#                    nw=2.0, sw0=0.0, sw_inj=1.0, L=1.0, pv_inj=5.0):
-# Coupled nonlinear PDE's
-# Buckley Leverett equation
-# dependent variables: pressure and water saturation
-# Prepared for educational purposes by ** AAE **
-# works fine, timestepping can be improved (ODE solver?)
-# Written by Ali A. Eftekhari
-# Last checked: June 2021
-
 from pyfvtool import *
 import matplotlib.pyplot as plt
 import numpy as np
@@ -18,6 +7,18 @@ from scipy.interpolate import interp1d, pchip, PPoly
 
 def eps():
     return np.finfo(float).eps
+
+class CorePlug:
+    """
+    This class represents a core plug properties and functions.
+    """
+    def __init__(self, porosity=0.22, permeability=1e-12, diameter=2.54, core_length=6.0) -> None:
+        self.porosity = porosity
+        self.permeability = permeability
+        self.diameter = diameter
+        self.core_length = core_length
+        self.pore_volume = porosity * core_length * np.pi * (diameter/2)**2
+        self.cross_sectional_area = np.pi * (diameter/2)**2
 
 class CapillaryPressure:
     def __init__(self, swc=0.1, sor=0.1):
@@ -185,15 +186,12 @@ class Fluids:
         water_viscosity (float): Viscosity of water. Default is 0.001 Pa.s.
         oil_viscosity (float): Viscosity of oil. Default is 0.003 Pa.s.
     """
-    def __init__(self, mu_water=0.001, mu_oil=0.003):
+    def __init__(self, mu_water=0.001, mu_oil=0.003, rho_water=1000.0, rho_oil=800.0):
         self.water_viscosity = mu_water
         self.oil_viscosity = mu_oil
+        self.water_density = rho_water  # kg/m3
+        self.oil_density = rho_oil  # kg/m3
 
-def createFluids(fluids_dict: dict):
-    """
-    Creates a Fluids object from a dictionary of fluid properties.
-    """
-    return Fluids(mu_water=fluids_dict["water"]["viscosity"], mu_oil=fluids_dict["oil"]["viscosity"])
 
 class RelativePermeability:
     """
@@ -331,46 +329,28 @@ class RelativePermeability:
         plt.ylabel("Relative permeability")
         plt.legend()
 
-def createCapillaryPressurePiecewise(capillary_pressure_dict: dict, rel_perm_dict: dict):
-    """
-    Creates a CapillaryPressurePiecewise object from a dictionary of capillary pressure properties.
-    """
-    return CapillaryPressurePiecewise(sw_pc0=capillary_pressure_dict["sw_pc0"], pce=capillary_pressure_dict["pcw_entry"], 
-                                      sorting_factor=capillary_pressure_dict["labda_w"],
-                                      pc_min=capillary_pressure_dict["pc_min"], pc_max=capillary_pressure_dict["pc_max"], 
-                                      pc_lm=capillary_pressure_dict["pc_lm"], pc_hm=capillary_pressure_dict["pc_hm"], 
-                                      swc=rel_perm_dict["swc"], sor=rel_perm_dict["sor"], 
-                                      extrap_factor=capillary_pressure_dict["extrap_factor"], 
-                                      curve_factor_l=capillary_pressure_dict["curve_low"], 
-                                      curve_factor_h=capillary_pressure_dict["curve_high"])
-
-def createRelativePermeability(rel_perm_dict: dict):
-    """
-    Creates a RelativePermeability object from a dictionary of relative permeability properties.
-    """
-    return RelativePermeability(swc=rel_perm_dict["swc"], sor=rel_perm_dict["sor"], 
-                                kro0=rel_perm_dict["kro0"], no=rel_perm_dict["no"], 
-                                krw0=rel_perm_dict["krw0"], nw=rel_perm_dict["nw"])
-
-def createCapillaryPressureCorey(capillary_pressure_dict: dict, rel_perm_dict: dict):
-    """
-    Creates a CapillaryPressure object from a dictionary of Corey-type capillary pressure properties.
-    """
-    return CapillaryPressureBrooksCorey(swc=rel_perm_dict["swc"], sor=rel_perm_dict["sor"], 
-                                        pce_w=capillary_pressure_dict["pcw_entry"], pce_o=capillary_pressure_dict["pco_entry"], 
-                                        labda_w=capillary_pressure_dict["labda_w"], labda_o=capillary_pressure_dict["labda_o"], 
-                                        pc_max_w=capillary_pressure_dict["pc_max_w"], pc_max_o=capillary_pressure_dict["pc_max_o"])
 
 class Reservoir:
     def __init__(self, rel_perm: RelativePermeability, fluids: Fluids, 
-                 porosity=0.2, permeability=0.01e-12,
+                 core: CorePlug,
                  sw_init = 0.2, pressure_init = 100e5):
-        self.porosity = porosity
-        self.permeability = permeability
+        self.porosity = core.porosity
+        self.permeability = core.permeability
         self.rel_perm = rel_perm
         self.fluids = fluids
         self.initial_sw = np.maximum(rel_perm.swc, sw_init)
         self.initial_p = pressure_init
+
+class InitialConditions:
+    """
+    initial conditions for the core. This includes the initial pressure, saturation, temperature, and salinity
+    """
+    def __init__(self, water_saturation = 0.2, pressure = 100e5, temperature = 350.0, salinity = 1.0) -> None:
+        self.sw = water_saturation
+        self.p = pressure
+        self.T = temperature
+        self.salinity = salinity
+        
 
 class OperationalConditions:
     """
@@ -397,13 +377,12 @@ class CoreModel1D:
     def __init__(self, 
                  reservoir: Reservoir,
                  operational_conditions: OperationalConditions, 
-                 Nx: int = 50, 
-                 length: float=6.0e-2,
-                 diameter: float=2.5e-2,
+                 core: CorePlug,
+                 Nx: int = 50,
                  dp_allowed = 100, dsw_allowed = 0.05,
                  eps_p = 1e-5, eps_sw = 1e-5):
-        m = createMesh1D(Nx, length)
-        self.pore_volume = reservoir.porosity * length * np.pi * (diameter/2)**2
+        m = createMesh1D(Nx, core.core_lengthlength)
+        self.pore_volume = core.pore_volume
         self.injection_velocity = operational_conditions.injection_velocity
         self.dp_allowed = dp_allowed
         self.dsw_allowed = dsw_allowed

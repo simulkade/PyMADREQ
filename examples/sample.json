@@ -21,7 +21,7 @@
             }
         }
     },
-    "pc_imb":{
+    "pc":{
         "water_wet":{
             "piecewise":{
                 "pc_min": -1e6,
@@ -53,7 +53,9 @@
                 "curve_low": 10.0,
                 "curve_high": 10.0,
                 "pc_lm": -5.04e4,
-                "pc_hm": 0.16e4
+                "pc_hm": 0.16e4,
+                "pcw_entry": 1e5,
+                "labda_w": 2.4
             },
             "corey":{
                 "pcw_entry": 1e5,
@@ -90,10 +92,6 @@
         "eps_p": 1e-5,
         "dt": 1000.0,
         "end_time": 864000.0,
-        "initial_sw": 0.09,
-        "initial_p": 1.013e5,
-        "initial_c": 2.0,
-        "boundary_c": 0.6,
         "diffusivity": 1e-9,
         "nthreads": 4
     },
@@ -105,13 +103,7 @@
         "eps_p": 1e-5,
         "dt": 100.0,
         "end_time": 8640.0,
-        "initial_sw": 0.09,
-        "initial_p": 100.0e5,
-        "initial_c": 2.0,
-        "boundary_c": 0.6,
         "diffusivity": 1e-9,
-        "injection_rate_ml_min": 0.1,
-        "back_pressure": 100.0e5,
         "injected_pv": 5.0
     },
     "BC":{
@@ -135,14 +127,19 @@
             "Alkalinity": 0.002,
             "AlkalinityComponent": "HCO3",
             "pe": 4.0,
-            "Pressure": 1.0,
             "Temperature": 25.0
         },
-        "Solution2":{
-
-        }
+        "water_saturation": 0.09,
+        "pressure": 100.0e5,
+        "salinity": 2.0,
+        "injection_rate_ml_min": 0.1,
+        "back_pressure": 100.0e5
     },
     "IC":{
+        "water_saturation": 0.09,
+        "pressure": 100.0e5,
+        "salinity": 2.0,
+        "temperature": 350,
         "Solution":{
             "Name": "Formation Water",
             "Number": 2,
