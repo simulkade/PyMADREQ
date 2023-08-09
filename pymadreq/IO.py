@@ -72,7 +72,11 @@ def createOperationalCondition(op_dict: dict):
     """
     Creates a Operation object from a dictionary of operating and boundary conditions
     """
-    return cf.OperationalConditions()
+    return cf.OperationalConditions(injection_rate_ml_min=op_dict["injection_rate_ml_min"], 
+                                    injection_pressure=op_dict["pressure"],
+                                    production_pressure=op_dict["back_pressure"],
+                                    injection_sw=op_dict["water_saturation"],
+                                    active_rate=True)
 
 def createFloodingDomain(data: dict):
     return createMesh1D(data["flooding"]["Nx"], data["core"]["length"])
@@ -110,7 +114,7 @@ def read_core_properties(data: dict):
     """
     Read core properties from an input dictionary read from an input json file
     """
-    return cf.createCore(data)
+    return cf.createCore(data["core"])
 
 def read_flooding(data: dict):
     """

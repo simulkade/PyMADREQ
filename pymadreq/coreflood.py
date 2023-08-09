@@ -362,12 +362,12 @@ class OperationalConditions:
         injection_pressure (float, optional): Injection pressure in Pa. Default is 100e5.
         production_pressure (float, optional): Production pressure in Pa. Default is 50e5.
     """
-    def __init__(self, injection_velocity: float=1e-5,               
+    def __init__(self, injection_rate_ml_min: float=0.1,               
                  injection_pressure: float=100e5,                 
                  production_pressure : float=50e5,
                  injection_sw = 1.0,
                  active_rate= True):
-        self.injection_velocity = injection_velocity
+        self.injection_rate_ml_min = injection_rate_ml_min
         self.injection_pressure = injection_pressure
         self.production_pressure = production_pressure
         self.active_rate = active_rate
