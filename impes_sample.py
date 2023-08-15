@@ -16,9 +16,9 @@ rel_perm_ww, rel_perm_ow, pc_ww, pc_ow = IO.read_transport_functions(data)
 core_plug = IO.read_core_properties(data)
 fluids = IO.read_fluids(data)
 IC = IO.createIC(data["IC"]) # initial conditions
-BC = IO.createOperationalCondition(data["BC"]) # boundary conditions
+BC = IO.createFloodingCondition(data["BC"]) # boundary conditions
 
-m = IO.createFloodingDomain(data)
+m = IO.read_flooding_domain(data)
 
 # define the physical parametrs
 SF0 = 0.5 # closer to 1 is water-wet
@@ -31,6 +31,8 @@ pc_imb = lambda sw, sf:(pc_ww.pc_imb(sw)*sf+pc_ow.pc_imb(sw)*(1-sf))
 dpc_imb = lambda sw, sf:(pc_ww.dpc_dsw_imb(sw)*sf+pc_ow.dpc_dsw_imb(sw)*(1-sf))
 dkrodsw = lambda sw, sf:(rel_perm_ww.dkrodsw(sw)*sf+rel_perm_ow.dkrodsw(sw)*(1-sf))
 dkrwdsw = lambda sw, sf:(rel_perm_ww.dkrwdsw(sw)*sf+rel_perm_ow.dkrwdsw(sw)*(1-sf))
+sol = root(lambda sw:pc_imb(sw, SF0), SF0*pc_ww.sw_pc0+(1-SF0)*pc_ow.sw_pc0) # saturation at which pc=0
+sw_pc0 = sol.x # saturation at which pc=0
 
 # core
 k= createCellVariable(m, core_plug.permeability)
@@ -44,8 +46,7 @@ p_back = BC.production_pressure # [Pa] pressure
 u_inj = BC.injection_rate_ml_min/core_plug.cross_sectional_area # [m/s]
 sw0 = IC.sw # initial saturation
 
-sol = root(lambda sw:pc_imb(sw, SF0), SF0*pc_ww.sw_pc0+(1-SF0)*pc_ow.sw_pc0) # saturation at which pc=0
-sw_pc0 = sol.x # saturation at which pc=0
+
 
 BCp = createBC(m) # Neumann BC for pressure
 BCs = createBC(m) # Neumann BC for saturation

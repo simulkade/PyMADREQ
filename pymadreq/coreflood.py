@@ -79,6 +79,7 @@ class CapillaryPressurePiecewise(CapillaryPressure):
             [1 - sor, pc_min],
             [1.0, extrap_factor * pc_min]
         ])
+        # print(pc_data)
         pc_pp = pchip(pc_data[:, 0], pc_data[:, 1])
         # pc = lambda sw: pc_pp(sw)
         pc_der_pp = pc_pp.derivative(nu=1)
@@ -91,18 +92,19 @@ class CapillaryPressurePiecewise(CapillaryPressure):
         self.labda = sorting_factor #-np.log((swc)/(1-swc))/(np.log(pc_max/pce)) until I find a better way
         pc_corey = CapillaryPressureBrooksCorey(swc=swc, sor=sor, pce_w=pce, labda_w=self.labda, pc_max_w=pc_max)
         # self.labda = labda
-        print(self.labda)
+        # print(self.labda)
+        # print("sw0_w", pc_corey.sw0_w)
         pc_drain_data = np.array([
             [0.0, extrap_factor * pc_max],
             [swc, pc_max],
             # [pc_corey.sw0, pc_corey.pc_drain(pc_corey.sw0)],
-            [np.mean([pc_corey.sw0_w, sw_hm]), pc_corey.pc_drain(np.mean([pc_corey.sw0_w, sw_hm]))],
+            # [np.mean([pc_corey.sw0_w, sw_hm]), pc_corey.pc_drain(np.mean([pc_corey.sw0_w, sw_hm]))],
             [sw_hm, pc_corey.pc_drain(sw_hm)],
             [sw_pc0, pc_corey.pc_drain(np.array(sw_pc0))],
             [1 - sor, pc_corey.pc_drain(np.array(1 - sor))],
             [1.0, pce]
         ])
-        print(pc_drain_data)
+        # print(pc_drain_data)
         self.pc_drain = pchip(pc_drain_data[:, 0], pc_drain_data[:, 1])
         self.dpc_dsw_drain = self.pc_drain.derivative(nu=1)
 
@@ -350,9 +352,24 @@ class InitialConditions:
         self.p = pressure
         self.T = temperature
         self.salinity = salinity
+
+class NumericalSettings:
+    """
+    Numerical settings for the simulation. 
+    This includes the accuracy parameters for the solver
+    """
+    def __init__(self, dp_allowed = 100, dsw_allowed = 0.05,
+                 eps_p = 1e-5, eps_sw = 1e-5,
+                 simulation_time = 18000., time_step = 100.) -> None:
+        self.dp_allowed = dp_allowed
+        self.dsw_allowed = dsw_allowed
+        self.eps_p = eps_p
+        self.eps_sw = eps_sw
+        self.simulation_time = simulation_time
+        self.time_step = time_step
         
 
-class OperationalConditions:
+class FloodingConditions:
     """
     Operational conditions for the reservoir. This includes the injection rate and 
     injection/production pressures.
@@ -376,7 +393,7 @@ class OperationalConditions:
 class CoreModel1D:
     def __init__(self, 
                  reservoir: Reservoir,
-                 operational_conditions: OperationalConditions, 
+                 operational_conditions: FloodingConditions, 
                  core: CorePlug,
                  Nx: int = 50,
                  dp_allowed = 100, dsw_allowed = 0.05,
@@ -483,137 +500,10 @@ class CoreModel1D:
             self.initial_pressure.value[:] = self.pressure.value[:]
             self.initial_sw.value[:] = self.saturation.value[:]
 
-if __name__ == "__main__":
-    # define relative permeability parametrs
-    krw0 = 1.0
-    kro0 = 0.76
-    nw = 2.4
-    no = 2.0
-    sor = 0.12
-    swc = 0.09
-    rel_perm = RelativePermeability(krw0=krw0, kro0=kro0, nw=nw, no=no, swc=swc, sor=sor)
+class CoreModel2D:
+    def __init__(self) -> None:
+        pass
 
-    # define fluid properties
-    mu_oil = 2e-3  # [Pa.s] oil viscosity
-    mu_water = 1e-3  # [Pa.s] water viscosity
-    phases = Fluids(mu_oil=mu_oil, mu_water=mu_water)
-
-    # define reservoir properties
-    k0 = 2e-12  # [m^2] average reservoir permeability
-    phi0 = 0.2  # average porosity
-    p0 = 100e5  # [bar] pressure
-    sw0 = swc+0.1  # initial water saturation
-    sw_in = 1
-    field = Resevoir(rel_perm=rel_perm, fluids=phases, porosity=phi0, permeability=k0, 
-                    sw_init=sw0, pressure_init=p0)
-
-    # define operational conditions
-    pin = 150e5  # [bar] injection pressure at the left boundary
-    u_in = 1.0/(24*3600)  # [m/s] equal to 1 m/day
-    p_back = p0  # [bar] production (back) pressure at the right boundary
-    op_cond = OperationalConditions(injection_velocity=u_in, 
-                                    injection_pressure=pin, production_pressure=p_back)
-
-    # define the geometry
-    Nx = 100  # number of cells in x direction
-    W = 300  # [m] length of the domain in x direction
-    m = createMesh1D(Nx, W)  # creates a 1D mesh
-
-    # reservoir
-    core = CoreModel1D(field=field, mesh=m, operational_conditions=op_cond)
-    core.simulate(final_time=2*3600., dt=100.)
-    # Lo = @(sw)(k/mu_oil*kro(sw))
-    # dLwdsw = @(sw)(k/mu_water*dkrwdsw(sw))
-    # dLodsw = @(sw)(k/mu_oil*dkrodsw(sw))
-    # # Define the boundaries
-    # BCp = createBC(m)  # Neumann BC for pressure
-    # BCs = createBC(m)  # Neumann BC for saturation
-    # # left boundary pressure gradient
-    # BCp.left.a[:] = (krw(sw_in)*lw.xvalue(1, :)+kro(sw_in)*lo.xvalue(1, : )) BCp.left.b(: ) = 0 BCp.left.c(: ) = -u_in
-    # # change the right boandary to constant pressure (Dirichlet)
-    # # BCp.left.a[:]=0 BCp.left.b[:]=1 BCp.left.c[:]=pin
-    # BCp.right.a[:] = 0 BCp.right.b(: ) = 1 BCp.right.c(: ) = p0
-    # # change the left boundary to constant saturation (Dirichlet)
-    # BCs.left.a[:] = 0 BCs.left.b(: ) = 1 BCs.left.c[:] = 1
-    # # define the time step and solver properties
-    # # dt = 1000 # [s] time step
-    # dt = (W/Nx)/u_in/10  # [s]
-    # t_end = 1000*dt  # [s] final time
-    # eps_p = 1e-5  # pressure accuracy
-    # eps_sw = 1e-5  # saturation accuracy
-    # # define the variables
-    # sw_old = createCellVariable(m, sw0, BCs)
-    # p_old = createCellVariable(m, p0, BCp)
-    # sw = sw_old
-    # p = p_old
-    # uw = -gradientTerm(p_old)  # an estimation of the water velocity
-    # # start the main loop
-    # # generate intial pressure profile (necessary to initialize the fully
-    # # implicit solver)
-    # dp_alwd = 100.0  # Pa
-    # dsw_alwd = 0.05
-    # t = 0
-    # # fprintf(1, 'progress (##):  ')
-    # while (t < t_end)
-    # error_p = 1e5
-    # error_sw = 1e5
-    # # Implicit loop
-    # loop_count = 0
-    #     while ((error_p > eps_p) | | (error_sw > eps_sw))
-    #     loop_count = loop_count+1
-    #     if loop_count > 10
-    #         break
-    #         end
-    #         # calculate parameters
-    #         pgrad = gradientTerm(p)
-    #         sw_face = upwindMean(sw, -pgrad)  # average value of water saturation
-    #         labdao = lo.*funceval(kro, sw_face)
-    #         labdaw = lw.*funceval(krw, sw_face)
-    #         dlabdaodsw = lo.*funceval(dkrodsw, sw_face)
-    #         dlabdawdsw = lw.*funceval(dkrwdsw, sw_face)
-    #         labda = labdao+labdaw
-    #         dlabdadsw = dlabdaodsw+dlabdawdsw
-    #         # compute [Jacobian] matrices
-    #         Mdiffp1 = diffusionTerm(-labda)
-    #         Mdiffp2 = diffusionTerm(-labdaw)
-    #         Mconvsw1 = convectionUpwindTerm(-dlabdadsw.*pgrad)
-    #         Mconvsw2 = convectionUpwindTerm(-dlabdawdsw.*pgrad)
-    #         [Mtranssw2, RHStrans2] = transientTerm(sw_old, dt, phi)
-    #         # Compute RHS values
-    #         RHS1 = divergenceTerm(-dlabdadsw.*sw_face.*pgrad)
-    #         RHS2 = divergenceTerm(-dlabdawdsw.*sw_face.*pgrad)
-    #         # include boundary conditions
-    #         [Mbcp, RHSbcp] = boundaryCondition(BCp)
-    #         [Mbcsw, RHSbcsw] = boundaryCondition(BCs)
-    #         # Couple the equations BC goes into the block on the main diagonal
-    #         M = [Mdiffp1+Mbcp Mconvsw1 Mdiffp2 Mconvsw2+Mtranssw2+Mbcsw]
-    #         RHS = [RHS1+RHSbcp RHS2+RHStrans2+RHSbcsw]
-    #         # solve the linear system of equations
-    #         x = M\RHS
-    #         # x = agmg(M, RHS, [], 1e-10, 500, [], [p.value[:] sw.value[:]])
-    #         # separate the variables from the solution
-    #         p_new = reshapeCell(m, full(x(1: (Nx+2))))
-    #         sw_new = reshapeCell(m, full(x((Nx+2)+1: end)))
-    #         # calculate error values
-    #         error_p = max(abs((p_new(: )-p.value(: ))./p_new(: )))
-    #         error_sw = max(abs(sw_new[:]-sw.value(: )))
-    #         # assign new values of p and sw
-    #         p.value = p_new
-    #         sw.value = sw_new
-    #     end
-    #     if loop_count > 10
-    #     p = p_old
-    #     sw = sw_old
-    #         dt = dt/5
-    #         continue
-    #     end
-    #     dsw = max(abs(sw_new(: )-sw_old.value[:])./sw_new[:])
-    #     t = t+dt
-    #     fprintf(1, '\b\b\b\b\b\b\b\b\b\b\b\b\b\bProgress: #d ##', floor(t/t_end*100))
-    #     dt = min([dt*(dsw_alwd/dsw), 2*dt, t_end-t])
-    #     p_old = p
-    #     sw_old = sw
-    #     figure(1)visualizeCells(sw) drawnow
-    # end
-    # fprintf('\n')
-        
+class CoreModel3D:
+    def __init__(self) -> None:
+        pass
