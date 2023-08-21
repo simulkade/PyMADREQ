@@ -25,13 +25,13 @@
         "water_wet":{
             "piecewise":{
                 "pc_min": -1e6,
-                "pc_max": 1e6,
+                "pc_max": 5e6,
                 "sw_pc0": 0.6,
-                "extrap_factor": 100.0,
-                "curve_low": 10.0,
+                "extrap_factor": 200.0,
+                "curve_low": 5.0,
                 "curve_high": 10.0,
-                "pc_lm": -1.0e4,
-                "pc_hm": 1.0e4,
+                "pc_lm": -5.0e4,
+                "pc_hm": 7.0e4,
                 "pcw_entry": 1e5,
                 "labda_w": 2.4
             },
