@@ -804,8 +804,7 @@ class CoreFlooding1D:
                 pgrad = gradientTerm(p)
                 sw_face = upwindMean(sw, -pgrad)  # average value of water saturation
                 sw_ave=arithmeticMean(sw)
-                sw_temp = createCellVariable(self.domain, 0.0)
-                sw_temp.update_value(sw)
+                sw_temp = sw.copy()
                 BC2GhostCells(sw_temp)
                 pc_cell = funceval(self.pc.pc_imb, sw_temp)
                 pcgrad = gradientTermFixedBC(pc_cell)
