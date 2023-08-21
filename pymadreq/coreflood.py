@@ -233,29 +233,6 @@ class CapillaryPressureBrooksCorey(CapillaryPressure):
         return res
 
 
-# # Example usage:
-# sw_pc0 = 0.4
-# pc_lm = 0.5
-# pc_hm = 0.8
-# pc_min = 0.1
-# pc_max = 0.9
-# swc = 0.2
-# sor = 0.1
-# extrap_factor = 1.5
-# curve_factor_l = 2.0
-# curve_factor_h = 1.5
-
-# pc_function, pcder_function = piecewise_pc(sw_pc0, pc_lm, pc_hm, pc_min, pc_max, swc, sor,
-#                                            extrap_factor, curve_factor_l, curve_factor_h)
-
-# # Now you can use pc_function and pcder_function as follows:
-# sw_value = 0.3
-# pc_value = pc_function(sw_value)
-# pc_der_value = pcder_function(sw_value)
-# print("pc(", sw_value, ") =", pc_value)
-# print("pcder(", sw_value, ") =", pc_der_value)
-
-
 class Fluids:
     """
     This class represents a model for calculating fluid properties.
@@ -484,7 +461,7 @@ class NumericalSettings:
         eps_sw=1e-5,
         simulation_time=18000.0,
         time_step=100.0,
-        time_step_multiplier = 10.0
+        time_step_multiplier=10.0,
     ) -> None:
         self.dp_allowed = dp_allowed
         self.dsw_allowed = dsw_allowed
@@ -670,15 +647,17 @@ class CoreFlooding1D:
     def __init__(
         self,
         rel_perm: RelativePermeability,
+        pc: CapillaryPressure,
         core_plug: CorePlug,
         fluids: Fluids,
         IC: InitialConditions,
         BC: FloodingConditions,
         numerical_params: NumericalSettings,
-        Nx: int = 30
+        Nx: int = 30,
     ) -> None:
         self.rel_perm = rel_perm
         self.core_plug = core_plug
+        self.pc = pc
         self.fluids = fluids
         self.IC = IC
         self.BC = BC
@@ -706,76 +685,92 @@ class CoreFlooding1D:
         BCp.right.c[:] = p_back
         BCp.left.a[:] = 1.0
         BCp.left.b[:] = 0.0
-        BCp.left.c[:] = -u_inj * self.water_viscosity.value[0] / self.permeability.value[0]
+        BCp.left.c[:] = (
+            -u_inj * self.water_viscosity.value[0] / self.permeability.value[0]
+        )
         BCs.left.a[:] = 0.0
         BCs.left.b[:] = 1.0
         BCs.left.c[:] = 1.0
-        sw_old = createCellVariable(m, sw0, BCs)
-        p_old = createCellVariable(m, p0, BCp)
-        self.initial_pressure = p_old
-        self.initial_sw = sw_old
+        self.initial_pressure = createCellVariable(m, p0, BCp)
+        self.initial_sw = createCellVariable(m, sw0, BCs)
+        self.final_pressure = createCellVariable(m, p0, BCp)
+        self.final_sw = createCellVariable(m, sw0, BCs)
         self.pressure_bc = BCp
         self.saturation_bc = BCs
 
     def simulate_no_pc(self):
-        t_end = self.numerical_params.simulation_time # [s] final simulation time
+        t_end = self.numerical_params.simulation_time  # [s] final simulation time
         # eps_p = self.numerical_params.eps_p # pressure accuracy
         # eps_sw = self.numerical_params.eps_sw # saturation accuracy
-        dsw_alwd= self.numerical_params.dsw_allowed
+        dsw_alwd = self.numerical_params.dsw_allowed
         # dp_alwd= self.numerical_params.dp_allowed # Pa
-        dt = self.numerical_params.time_step # [s] initial time step
+        dt = self.numerical_params.time_step  # [s] initial time step
         [Mbcp, RHSbcp] = boundaryConditionTerm(self.pressure_bc)
         # [Mbcsw, RHSbcsw] = boundaryConditionTerm(self.saturation_bc)
-        lw = geometricMean(self.permeability/self.water_viscosity)
-        lo = geometricMean(self.permeability/self.oil_viscosity)
-        # initial conditions
-        sw_old = self.initial_sw
-        p_old = self.initial_pressure
-        p = p_old
-        sw = sw_old
+        lw = geometricMean(self.permeability / self.water_viscosity)
+        lo = geometricMean(self.permeability / self.oil_viscosity)
+        # initial conditions; will clean up by creating a copy of the initial pressure and saturation
+        sw_old = createCellVariable(self.domain, 0.0)
+        sw_old.update_value(self.initial_sw)
+        p_old = createCellVariable(self.domain, 0.0)
+        p_old.update_value(self.initial_pressure)
+        p = createCellVariable(self.domain, 0.0)
+        p.update_value(self.initial_pressure)
+        sw = createCellVariable(self.domain, 0.0)
+        sw.update_value(self.initial_sw)
         uw = -gradientTerm(p_old)  # an estimation of the water velocity
         oil_init = domainInt(1 - sw_old)
         rec_fact = np.array([0])
         t_hist = np.array([0])
         dp_hist = np.array([0])
         t = 0.0
-        while (t<t_end):
+        while t < t_end:
             error_sw = 1e5
-            while(1): # loop condition is checked inside
+            while 1:  # loop condition is checked inside
                 pgrad = gradientTerm(p)
-                sw_face = upwindMean(sw, -pgrad) # average value of water saturation
-                labdao = lo*faceeval(self.rel_perm.kro, sw_face)
-                labdaw = lw*faceeval(self.rel_perm.krw, sw_face)
-                labda = labdao+labdaw
+                sw_face = upwindMean(sw, -pgrad)  # average value of water saturation
+                labdao = lo * faceeval(self.rel_perm.kro, sw_face)
+                labdaw = lw * faceeval(self.rel_perm.krw, sw_face)
+                labda = labdao + labdaw
                 Mdiffp1 = diffusionTerm(-labda)
-                RHS1 = RHSbcp # with capillary
-                p_new=solvePDE(self.domain, Mdiffp1+Mbcp, RHS1)
+                RHS1 = RHSbcp  # with capillary
+                p_new = solvePDE(self.domain, Mdiffp1 + Mbcp, RHS1)
                 # solve for Sw
                 pgrad = gradientTerm(p_new)
-                uw=-labdaw*pgrad
-                RHS_sw=-divergenceTerm(uw)
-                sw_new=solveExplicitPDE(sw_old, dt, RHS_sw/self.porosity.value.ravel(), self.saturation_bc)
-                error_sw = np.max(np.abs(sw_new.internalCells()-sw.internalCells()))
+                uw = -labdaw * pgrad
+                RHS_sw = -divergenceTerm(uw)
+                sw_new = solveExplicitPDE(
+                    sw_old, dt, RHS_sw / self.porosity.value.ravel(), self.saturation_bc
+                )
+                error_sw = np.max(np.abs(sw_new.internalCells() - sw.internalCells()))
                 # calculate new time step
                 # assign new values of p and sw
-                if error_sw>dsw_alwd:
-                    dt=dt*(dsw_alwd/error_sw)
+                if error_sw > dsw_alwd:
+                    dt = dt * (dsw_alwd / error_sw)
                 else:
-                    t=t+dt
+                    t = t + dt
                     p.update_value(p_new)
                     sw.update_value(sw_new)
                     p_old.update_value(p)
                     sw_old.update_value(sw)
-                    dt = min(dt*(dsw_alwd/error_sw), self.numerical_params.time_step_multiplier*dt)
+                    dt = min(
+                        dt * (dsw_alwd / error_sw),
+                        self.numerical_params.time_step_multiplier * dt,
+                    )
                     break
             # calculate recovery factor
-            rec_fact= np.append(rec_fact, (oil_init-domainInt(1-sw))/oil_init)
+            rec_fact = np.append(rec_fact, (oil_init - domainInt(1 - sw)) / oil_init)
             t_hist = np.append(t_hist, t)
-            dp_hist = np.append(dp_hist, p_new.value[0:2].mean()-p_new.value[-2:].mean())
+            dp_hist = np.append(
+                dp_hist, p_new.value[0:2].mean() - p_new.value[-2:].mean()
+            )
+        self.final_pressure.update_value(p_new)
+        self.final_sw.update_value(sw_new)
         return t_hist, rec_fact, dp_hist
 
     def simulate_with_pc(self):
         pass
+
 
 class CoreModel2D:
     def __init__(self) -> None:
