@@ -723,7 +723,16 @@ class CoreFlooding1D:
         oil_init = domainInt(1 - sw_old)
         rec_fact = np.array([0])
         t_hist = np.array([0])
-        dp_hist = np.array([0])
+        pgrad = gradientTerm(p)
+        sw_face = upwindMean(sw, -pgrad)  # average value of water saturation
+        labdao = lo * faceeval(self.rel_perm.kro, sw_face)
+        labdaw = lw * faceeval(self.rel_perm.krw, sw_face)
+        labda = labdao + labdaw
+        Mdiffp1 = diffusionTerm(-labda)
+        RHS1 = RHSbcp  # with capillary
+        p_new = solvePDE(self.domain, Mdiffp1 + Mbcp, RHS1)
+        p.update_value(p_new)
+        dp_hist = np.array([p_new.value[0:2].mean() - p_new.value[-2:].mean()])
         t = 0.0
         while t < t_end:
             error_sw = 1e5
@@ -847,6 +856,244 @@ class CoreFlooding1D:
             t_hist = np.append(t_hist, t)
             dp_hist = np.append(
                 dp_hist, p_new.value[0:2].mean() - p_new.value[-2:].mean()
+            )
+        self.final_pressure.update_value(p_new)
+        self.final_sw.update_value(sw_new)
+        return t_hist, rec_fact, dp_hist
+
+class CoreFlooding2D:
+    def __init__(
+        self,
+        rel_perm: RelativePermeability,
+        pc: CapillaryPressure,
+        core_plug: CorePlug,
+        fluids: Fluids,
+        IC: InitialConditions,
+        BC: FloodingConditions,
+        numerical_params: NumericalSettings,
+        Nx: int = 30, Nr = 10
+    ) -> None:
+        """
+        define a 2D core flooding model
+        TODO:
+        1. add heterogeneous permeability and porosity
+        2. add heterogeneous capillary pressure
+        3. add heterogeneous initial conditions
+        4. add heterogeneous boundary conditions
+        """
+        self.rel_perm = rel_perm
+        self.core_plug = core_plug
+        self.pc = pc
+        self.fluids = fluids
+        self.IC = IC
+        self.BC = BC
+        self.numerical_params = numerical_params
+        m = createMeshCylindrical2D(Nr, Nx, core_plug.diameter/2, core_plug.core_length)
+        self.domain = m
+        k = createCellVariable(m, core_plug.permeability)
+        self.permeability = k
+        phi = createCellVariable(m, core_plug.porosity)
+        self.porosity = phi
+        self.water_viscosity = createCellVariable(m, fluids.water_viscosity)
+        self.oil_viscosity = createCellVariable(m, fluids.oil_viscosity)
+        p0 = IC.p  # [Pa] pressure
+        p_back = BC.production_pressure  # [Pa] pressure
+        u_inj = BC.injection_rate_ml_min / (
+            core_plug.cross_sectional_area * 1e4
+        )  # [cm/min]
+        u_inj = u_inj / (60 * 100)  # [m/s]
+        self.u_inj = u_inj
+        sw0 = IC.sw  # initial saturation
+        BCp = createBC(m)  # Neumann BC for pressure
+        BCs = createBC(m)  # Neumann BC for saturation
+        BCp.top.a[:] = 0.0
+        BCp.top.b[:] = 1.0
+        BCp.top.c[:] = p_back
+        BCp.bottom.a[:] = 1.0
+        BCp.bottom.b[:] = 0.0
+        BCp.bottom.c[:] = (
+            -u_inj * self.water_viscosity.value[1,1] / self.permeability.value[1,1] # FIXIT: this can go wrong
+        )
+        BCs.bottom.a[:] = 0.0
+        BCs.bottom.b[:] = 1.0
+        BCs.bottom.c[:] = 1.0
+        self.initial_pressure = createCellVariable(m, p0, BCp)
+        self.initial_sw = createCellVariable(m, sw0, BCs)
+        self.final_pressure = createCellVariable(m, p0, BCp)
+        self.final_sw = createCellVariable(m, sw0, BCs)
+        self.pressure_bc = BCp
+        self.saturation_bc = BCs
+
+    def simulate_no_pc(self):
+        t_end = self.numerical_params.simulation_time  # [s] final simulation time
+        # eps_p = self.numerical_params.eps_p # pressure accuracy
+        # eps_sw = self.numerical_params.eps_sw # saturation accuracy
+        dsw_alwd = self.numerical_params.dsw_allowed
+        # dp_alwd= self.numerical_params.dp_allowed # Pa
+        dt = self.numerical_params.time_step  # [s] initial time step
+        [Mbcp, RHSbcp] = boundaryConditionTerm(self.pressure_bc)
+        # [Mbcsw, RHSbcsw] = boundaryConditionTerm(self.saturation_bc)
+        lw = geometricMean(self.permeability / self.water_viscosity)
+        lo = geometricMean(self.permeability / self.oil_viscosity)
+        # initial conditions; will clean up by creating a copy of the initial pressure and saturation
+        sw_old = createCellVariable(self.domain, 0.0)
+        sw_old.update_value(self.initial_sw)
+        p_old = createCellVariable(self.domain, 0.0)
+        p_old.update_value(self.initial_pressure)
+        p = createCellVariable(self.domain, 0.0)
+        p.update_value(self.initial_pressure)
+        sw = createCellVariable(self.domain, 0.0)
+        sw.update_value(self.initial_sw)
+        uw = -gradientTerm(p_old)  # an estimation of the water velocity
+        oil_init = domainInt(1 - sw_old)
+        rec_fact = np.array([0])
+        t_hist = np.array([0])
+        pgrad = gradientTerm(p)
+        sw_face = upwindMean(sw, -pgrad)  # average value of water saturation
+        labdao = lo * faceeval(self.rel_perm.kro, sw_face)
+        labdaw = lw * faceeval(self.rel_perm.krw, sw_face)
+        labda = labdao + labdaw
+        Mdiffp1 = diffusionTerm(-labda)
+        RHS1 = RHSbcp  # with capillary
+        p_new = solvePDE(self.domain, Mdiffp1 + Mbcp, RHS1)
+        p_ave = arithmeticMean(p_new)
+        dp_hist = np.array([p_ave.yvalue[:, 0].mean() - p_ave.yvalue[:,-1].mean()])
+        p.update_value(p_new)
+        t = 0.0
+        while t < t_end:
+            error_sw = 1e5
+            while 1:  # loop condition is checked inside
+                pgrad = gradientTerm(p)
+                sw_face = upwindMean(sw, -pgrad)  # average value of water saturation
+                labdao = lo * faceeval(self.rel_perm.kro, sw_face)
+                labdaw = lw * faceeval(self.rel_perm.krw, sw_face)
+                labda = labdao + labdaw
+                Mdiffp1 = diffusionTerm(-labda)
+                RHS1 = RHSbcp  # with capillary
+                p_new = solvePDE(self.domain, Mdiffp1 + Mbcp, RHS1)
+                # solve for Sw
+                pgrad = gradientTerm(p_new)
+                uw = -labdaw * pgrad
+                RHS_sw = -divergenceTerm(uw)
+                sw_new = solveExplicitPDE(
+                    sw_old, dt, RHS_sw / self.porosity.value.ravel(), self.saturation_bc
+                )
+                error_sw = np.max(np.abs(sw_new.internalCells() - sw.internalCells()))
+                # calculate new time step
+                # assign new values of p and sw
+                if error_sw > dsw_alwd:
+                    dt = dt * (dsw_alwd / error_sw)
+                else:
+                    t = t + dt
+                    p.update_value(p_new)
+                    sw.update_value(sw_new)
+                    p_old.update_value(p)
+                    sw_old.update_value(sw)
+                    dt = min(
+                        dt * (dsw_alwd / error_sw),
+                        self.numerical_params.time_step_multiplier * dt,
+                    )
+                    break
+            # calculate recovery factor
+            rec_fact = np.append(rec_fact, (oil_init - domainInt(1 - sw)) / oil_init)
+            t_hist = np.append(t_hist, t)
+            p_ave = arithmeticMean(p_new)
+            dp_hist = np.append(
+                dp_hist, p_ave.yvalue[:, 0].mean() - p_ave.yvalue[:,-1].mean() 
+            )
+        self.final_pressure.update_value(p_new)
+        self.final_sw.update_value(sw_new)
+        return t_hist, rec_fact, dp_hist
+
+    def simulate_with_pc(self):
+        t_end = self.numerical_params.simulation_time  # [s] final simulation time
+        # eps_p = self.numerical_params.eps_p # pressure accuracy
+        # eps_sw = self.numerical_params.eps_sw # saturation accuracy
+        # sol = root(self.pc.pc_imb, self.pc.sw_pc0) # saturation at which pc=0
+        # sw_pc0 = sol.x # saturation at which pc=0
+        sw_pc0 = self.pc.sw_pc0
+        dsw_alwd = self.numerical_params.dsw_allowed
+        # dp_alwd= self.numerical_params.dp_allowed # Pa
+        dt = self.numerical_params.time_step  # [s] initial time step
+        [Mbcp, RHSbcp] = boundaryConditionTerm(self.pressure_bc)
+        # [Mbcsw, RHSbcsw] = boundaryConditionTerm(self.saturation_bc)
+        lw = geometricMean(self.permeability / self.water_viscosity)
+        lo = geometricMean(self.permeability / self.oil_viscosity)
+        # initial conditions; will clean up by creating a copy of the initial pressure and saturation
+        sw_old = createCellVariable(self.domain, 0.0)
+        sw_old.update_value(self.initial_sw)
+        p_old = createCellVariable(self.domain, 0.0)
+        p_old.update_value(self.initial_pressure)
+        p = createCellVariable(self.domain, 0.0)
+        p.update_value(self.initial_pressure)
+        sw = createCellVariable(self.domain, 0.0)
+        sw.update_value(self.initial_sw)
+        uw = -gradientTerm(p_old)  # an estimation of the water velocity
+        oil_init = domainInt(1 - sw_old)
+        rec_fact = np.array([0])
+        t_hist = np.array([0])
+        pgrad = gradientTerm(p)
+        sw_face = upwindMean(sw, -pgrad)  # average value of water saturation
+        labdao = lo * faceeval(self.rel_perm.kro, sw_face)
+        labdaw = lw * faceeval(self.rel_perm.krw, sw_face)
+        labda = labdao + labdaw
+        Mdiffp1 = diffusionTerm(-labda)
+        RHS1 = RHSbcp  # with capillary
+        p_new = solvePDE(self.domain, Mdiffp1 + Mbcp, RHS1)
+        p_ave = arithmeticMean(p_new)
+        dp_hist = np.array([p_ave.yvalue[:, 0].mean() - p_ave.yvalue[:,-1].mean()])
+        p.update_value(p_new)
+        t = 0.0
+        while t < t_end:
+            error_sw = 1e5
+            while 1:  # loop condition is checked inside
+                pgrad = gradientTerm(p)
+                sw_face = upwindMean(sw, -pgrad)  # average value of water saturation
+                sw_ave=arithmeticMean(sw)
+                sw_temp = sw.copy()
+                BC2GhostCells(sw_temp)
+                pc_cell = funceval(self.pc.pc_imb, sw_temp)
+                pcgrad = gradientTermFixedBC(pc_cell)
+                labdao = lo * faceeval(self.rel_perm.kro, sw_face)
+                labdaw = lw * faceeval(self.rel_perm.krw, sw_face)
+                labda = labdao + labdaw
+                Mdiffp1 = diffusionTerm(-labda)
+                RHSpc1=divergenceTerm(labdao*pcgrad)
+                RHS1 = RHSbcp+RHSpc1  # with capillary
+                p_new = solvePDE(self.domain, Mdiffp1 + Mbcp, RHS1)
+                # solve for Sw
+                pgrad = gradientTerm(p_new)
+                uw = -labdaw * pgrad
+                RHS_sw = -divergenceTerm(uw)
+                sw_new = solveExplicitPDE(
+                    sw_old, dt, RHS_sw / self.porosity.value.ravel(), self.saturation_bc
+                )
+                error_sw = np.max(np.abs(sw_new.internalCells() - sw.internalCells()))
+                # calculate new time step
+                # assign new values of p and sw
+                if error_sw > dsw_alwd:
+                    dt = dt * (dsw_alwd / error_sw)
+                else:
+                    t = t + dt
+                    p.update_value(p_new)
+                    sw.update_value(sw_new)
+                    p_old.update_value(p)
+                    sw_old.update_value(sw)
+                    dt = min(
+                        dt * (dsw_alwd / error_sw),
+                        self.numerical_params.time_step_multiplier * dt,
+                    )
+                    break
+            if sw_ave.yvalue[:,-1].mean()>=sw_pc0:
+                self.saturation_bc.top.a[:] = 0. 
+                self.saturation_bc.top.b[:] = 1. 
+                self.saturation_bc.top.c[:]=sw_pc0
+            # calculate recovery factor
+            rec_fact = np.append(rec_fact, (oil_init - domainInt(1 - sw)) / oil_init)
+            t_hist = np.append(t_hist, t)
+            p_ave = arithmeticMean(p_new)
+            dp_hist = np.append(
+                dp_hist, p_ave.yvalue[:, 0].mean() - p_ave.yvalue[:,-1].mean() 
             )
         self.final_pressure.update_value(p_new)
         self.final_sw.update_value(sw_new)
