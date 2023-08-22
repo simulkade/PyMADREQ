@@ -814,7 +814,7 @@ class CoreFlooding1D:
                 sw_face = upwindMean(sw, -pgrad)  # average value of water saturation
                 sw_ave=arithmeticMean(sw)
                 sw_temp = sw.copy()
-                BC2GhostCells(sw_temp)
+                sw_temp.bc_to_ghost()
                 pc_cell = funceval(self.pc.pc_imb, sw_temp)
                 pcgrad = gradientTermFixedBC(pc_cell)
                 labdao = lo * faceeval(self.rel_perm.kro, sw_face)
@@ -896,6 +896,7 @@ class CoreFlooding2D:
         self.porosity = phi
         self.water_viscosity = createCellVariable(m, fluids.water_viscosity)
         self.oil_viscosity = createCellVariable(m, fluids.oil_viscosity)
+        lw = geometricMean(self.permeability / self.water_viscosity)
         p0 = IC.p  # [Pa] pressure
         p_back = BC.production_pressure  # [Pa] pressure
         u_inj = BC.injection_rate_ml_min / (
@@ -909,10 +910,10 @@ class CoreFlooding2D:
         BCp.top.a[:] = 0.0
         BCp.top.b[:] = 1.0
         BCp.top.c[:] = p_back
-        BCp.bottom.a[:] = 1.0
+        BCp.bottom.a[:] = lw.yvalue[:,0]
         BCp.bottom.b[:] = 0.0
         BCp.bottom.c[:] = (
-            -u_inj * self.water_viscosity.value[1,1] / self.permeability.value[1,1] # FIXIT: this can go wrong
+            -u_inj
         )
         BCs.bottom.a[:] = 0.0
         BCs.bottom.b[:] = 1.0
@@ -920,7 +921,7 @@ class CoreFlooding2D:
         self.initial_pressure = createCellVariable(m, p0, BCp)
         self.initial_sw = createCellVariable(m, sw0, BCs)
         self.final_pressure = createCellVariable(m, p0, BCp)
-        self.final_sw = createCellVariable(m, sw0, BCs)
+        self.final_sw = createCellVariable(m, sw0, BCs) 
         self.pressure_bc = BCp
         self.saturation_bc = BCs
 
@@ -958,7 +959,7 @@ class CoreFlooding2D:
         p_new = solvePDE(self.domain, Mdiffp1 + Mbcp, RHS1)
         p_ave = arithmeticMean(p_new)
         dp_hist = np.array([p_ave.yvalue[:, 0].mean() - p_ave.yvalue[:,-1].mean()])
-        p.update_value(p_new)
+        # p.update_value(p_new)
         t = 0.0
         while t < t_end:
             error_sw = 1e5
@@ -1042,7 +1043,7 @@ class CoreFlooding2D:
         p_new = solvePDE(self.domain, Mdiffp1 + Mbcp, RHS1)
         p_ave = arithmeticMean(p_new)
         dp_hist = np.array([p_ave.yvalue[:, 0].mean() - p_ave.yvalue[:,-1].mean()])
-        p.update_value(p_new)
+        # p.update_value(p_new)
         t = 0.0
         while t < t_end:
             error_sw = 1e5
@@ -1099,6 +1100,8 @@ class CoreFlooding2D:
         self.final_sw.update_value(sw_new)
         return t_hist, rec_fact, dp_hist
 
+class CoreImbibition:
+    pass
 
 class CoreModel2D:
     def __init__(self) -> None:
