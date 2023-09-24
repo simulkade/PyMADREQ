@@ -1081,6 +1081,8 @@ class CoreFlooding2D:
         self.final_pressure.update_value(p_new)
         self.final_sw.update_value(sw_new)
         return t_hist, rec_fact, dp_hist
+    
+    
 
 class CoreImbibition:
     def __init__(
@@ -1120,25 +1122,30 @@ class CoreImbibition:
         lw = geometricMean(self.permeability / self.water_viscosity)
         p0 = IC.p  # [Pa] pressure
         p_back = BC.production_pressure  # [Pa] pressure
-        u_inj = BC.injection_rate_ml_min / (
-            core_plug.cross_sectional_area * 1e4
-        )  # [cm/min]
-        u_inj = u_inj / (60 * 100)  # [m/s]
-        self.u_inj = u_inj
         sw0 = IC.sw  # initial saturation
         BCp = createBC(m)  # Neumann BC for pressure
         BCs = createBC(m)  # Neumann BC for saturation
         BCp.top.a[:] = 0.0
         BCp.top.b[:] = 1.0
         BCp.top.c[:] = p_back
-        BCp.bottom.a[:] = lw.yvalue[:,0]
-        BCp.bottom.b[:] = 0.0
-        BCp.bottom.c[:] = (
-            -u_inj
-        )
+        # BCp.bottom.a[:] = 0.0
+        # BCp.bottom.b[:] = 1.0
+        # BCp.bottom.c[:] = p_back
+        BCp.right.a[:] = 0.0
+        BCp.right.b[:] = 1.0
+        BCp.right.c[:] = p_back
+        sw_pc0 = self.pc.sw_pc0
+
         BCs.bottom.a[:] = 0.0
         BCs.bottom.b[:] = 1.0
-        BCs.bottom.c[:] = 1.0
+        BCs.bottom.c[:] = sw_pc0
+        # BCs.top.a[:] = 0.0
+        # BCs.top.b[:] = 1.0
+        # BCs.top.c[:] = sw_pc0
+        BCs.right.a[:] = 0.0
+        BCs.right.b[:] = 1.0
+        BCs.right.c[:] = sw_pc0
+
         self.initial_pressure = createCellVariable(m, p0, BCp)
         self.initial_sw = createCellVariable(m, sw0, BCs)
         self.final_pressure = createCellVariable(m, p0, BCp)
@@ -1150,9 +1157,6 @@ class CoreImbibition:
         t_end = self.numerical_params.simulation_time  # [s] final simulation time
         # eps_p = self.numerical_params.eps_p # pressure accuracy
         # eps_sw = self.numerical_params.eps_sw # saturation accuracy
-        # sol = root(self.pc.pc_imb, self.pc.sw_pc0) # saturation at which pc=0
-        # sw_pc0 = sol.x # saturation at which pc=0
-        sw_pc0 = self.pc.sw_pc0
         dsw_alwd = self.numerical_params.dsw_allowed
         # dp_alwd= self.numerical_params.dp_allowed # Pa
         dt = self.numerical_params.time_step  # [s] initial time step
@@ -1181,8 +1185,8 @@ class CoreImbibition:
         Mdiffp1 = diffusionTerm(-labda)
         RHS1 = RHSbcp  # with capillary
         p_new = solvePDE(self.domain, Mdiffp1 + Mbcp, RHS1)
-        p_ave = arithmeticMean(p_new)
-        dp_hist = np.array([p_ave.yvalue[:, 0].mean() - p_ave.yvalue[:,-1].mean()])
+        # p_ave = arithmeticMean(p_new)
+        # dp_hist = np.array([p_ave.yvalue[:, 0].mean() - p_ave.yvalue[:,-1].mean()])
         # p.update_value(p_new)
         t = 0.0
         while t < t_end:
@@ -1225,20 +1229,16 @@ class CoreImbibition:
                         self.numerical_params.time_step_multiplier * dt,
                     )
                     break
-            if sw_ave.yvalue[:,-1].mean()>=sw_pc0:
-                self.saturation_bc.top.a[:] = 0. 
-                self.saturation_bc.top.b[:] = 1. 
-                self.saturation_bc.top.c[:]=sw_pc0
             # calculate recovery factor
             rec_fact = np.append(rec_fact, (oil_init - domainInt(1 - sw)) / oil_init)
             t_hist = np.append(t_hist, t)
-            p_ave = arithmeticMean(p_new)
-            dp_hist = np.append(
-                dp_hist, p_ave.yvalue[:, 0].mean() - p_ave.yvalue[:,-1].mean() 
-            )
+            # p_ave = arithmeticMean(p_new)
+            # dp_hist = np.append(
+            #     dp_hist, p_ave.yvalue[:, 0].mean() - p_ave.yvalue[:,-1].mean() 
+            # )
         self.final_pressure.update_value(p_new)
         self.final_sw.update_value(sw_new)
-        return t_hist, rec_fact, dp_hist
+        return t_hist, rec_fact
 
 class CoreModel2D:
     def __init__(self) -> None:
